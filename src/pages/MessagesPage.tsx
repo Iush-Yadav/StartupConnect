@@ -121,9 +121,10 @@ export default function MessagesPage() {
 
         // Sort conversations by last message time (most recent first)
         console.log('fetchConversations: Sorting conversations...');
-        setConversations(Array.from(conversationMap.values()).sort((a, b) => 
+        const sortedConversations = Array.from(conversationMap.values()).sort((a, b) => 
           new Date(b.lastMessage.created_at).getTime() - new Date(a.lastMessage.created_at).getTime()
-        ));
+        );
+        setConversations(sortedConversations);
         console.log('fetchConversations: Conversations set.');
       } catch (error) {
         console.error('fetchConversations: Error fetching conversations:', error);
