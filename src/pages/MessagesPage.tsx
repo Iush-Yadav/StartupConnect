@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '../lib/store';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,6 +18,9 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(true);
   const [selectedChat, setSelectedChat] = useState<{ id: string; name: string; avatar?: string } | null>(null);
   const currentUser = useStore(state => state.currentUser);
+
+  // Memoize setConversations to avoid unnecessary re-renders
+  const setConversationsMemo = useCallback(setConversations, []);
 
   useEffect(() => {
     console.log('MessagesPage: useEffect triggered.');
@@ -124,7 +127,7 @@ export default function MessagesPage() {
         const sortedConversations = Array.from(conversationMap.values()).sort((a, b) => 
           new Date(b.lastMessage.created_at).getTime() - new Date(a.lastMessage.created_at).getTime()
         );
-        setConversations(sortedConversations);
+        setConversationsMemo(sortedConversations);
         console.log('fetchConversations: Conversations set.');
       } catch (error) {
         console.error('fetchConversations: Error fetching conversations:', error);
@@ -200,7 +203,7 @@ export default function MessagesPage() {
 
         // NOW update the conversations state, with partnerProfile guaranteed
         console.log('MessagesPage: Updating conversations state...');
-        setConversations(prevConversations => {
+        setConversationsMemo(prevConversations => {
           const existingConversationIndex = prevConversations.findIndex(
             conv => conv.user.id === newMessage.sender_id || conv.user.id === newMessage.receiver_id
           );
@@ -257,7 +260,7 @@ export default function MessagesPage() {
       console.log('MessagesPage: Unsubscribing from chat_messages channel.');
       subscription.unsubscribe();
     };
-  }, [currentUser, setConversations]);
+  }, [currentUser, setConversationsMemo]);
 
   const filteredConversations = conversations;
 
