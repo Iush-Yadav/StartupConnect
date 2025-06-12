@@ -387,7 +387,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   toggleLike: async (postId: string) => {
-    const { currentUser, fetchPosts } = get();
+    const { currentUser, posts } = get();
     if (!currentUser) {
       console.error('toggleLike: No current user found');
       return;
@@ -398,34 +398,48 @@ export const useStore = create<Store>((set, get) => ({
       return;
     }
 
-    console.log('toggleLike: Attempting to toggle like for post:', postId, 'by user:', currentUser.id);
-
-    const { data: existingLike } = await supabase
-      .from('post_likes')
-      .select('post_id, user_id')
-      .eq('post_id', postId)
-      .eq('user_id', currentUser.id)
-      .single();
-
-    if (existingLike) {
-      console.log('toggleLike: Removing existing like');
-      const { error } = await supabase
-        .from('post_likes')
-        .delete()
-        .eq('post_id', postId)
-        .eq('user_id', currentUser.id);
-      if (error) console.error('Error unliking post:', error);
-    } else {
-      console.log('toggleLike: Adding new like');
-      const { error } = await supabase
-        .from('post_likes')
-        .insert({
-          post_id: postId,
-          user_id: currentUser.id,
-        });
-      if (error) console.error('Error liking post:', error);
+    const postIndex = posts.findIndex(p => p.id === postId);
+    if (postIndex === -1) {
+      console.error('toggleLike: Post not found in store:', postId);
+      return;
     }
-    await fetchPosts(); // Re-fetch posts to update like counts and user_has_liked status
+
+    const currentPost = posts[postIndex];
+    const isCurrentlyLiked = currentPost.user_has_liked;
+
+    // Optimistically update the UI
+    const updatedPosts = [...posts];
+    updatedPosts[postIndex] = {
+      ...currentPost,
+      likes: isCurrentlyLiked ? currentPost.likes - 1 : currentPost.likes + 1,
+      user_has_liked: !isCurrentlyLiked,
+    };
+    set({ posts: updatedPosts });
+
+    try {
+      if (isCurrentlyLiked) {
+        console.log('toggleLike: Removing existing like');
+        const { error } = await supabase
+          .from('post_likes')
+          .delete()
+          .eq('post_id', postId)
+          .eq('user_id', currentUser.id);
+        if (error) throw error;
+      } else {
+        console.log('toggleLike: Adding new like');
+        const { error } = await supabase
+          .from('post_likes')
+          .insert({
+            post_id: postId,
+            user_id: currentUser.id,
+          });
+        if (error) throw error;
+      }
+    } catch (error) {
+      console.error('Error toggling like, reverting optimistic update:', error);
+      // Revert the optimistic update if the API call fails
+      set({ posts: posts }); // Revert to the original state
+    }
   },
 
   updateUserProfile: async (userId, data) => {
