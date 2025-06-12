@@ -20,11 +20,17 @@ export default function MessagesPage() {
   const currentUser = useStore(state => state.currentUser);
 
   useEffect(() => {
-    if (!currentUser) return;
+    console.log('MessagesPage: useEffect triggered.');
+    if (!currentUser) {
+      console.log('MessagesPage: No current user, returning.');
+      return;
+    }
 
     const fetchConversations = async () => {
+      console.log('fetchConversations: Starting...');
       try {
         // Get all messages for the current user
+        console.log('fetchConversations: Fetching messages from Supabase...');
         const { data: messages, error } = await supabase
           .from('messages')
           .select('*')
@@ -32,15 +38,19 @@ export default function MessagesPage() {
           .order('created_at', { ascending: false });
 
         if (error) throw error;
+        console.log('fetchConversations: Messages fetched.', messages?.length, 'messages.');
 
         // Extract all unique conversation partner IDs
+        console.log('fetchConversations: Extracting partner IDs...');
         const partnerIds = new Set<string>();
         messages?.forEach(message => {
           partnerIds.add(message.sender_id === currentUser.id ? message.receiver_id : message.sender_id);
         });
+        console.log('fetchConversations: Found', partnerIds.size, 'unique partners.');
 
         let partners: User[] = [];
         if (partnerIds.size > 0) {
+          console.log('fetchConversations: Fetching partner profiles...');
           const { data: fetchedPartners, error: partnersError } = await supabase
             .from('profiles')
             .select('id, full_name, username, avatar_url, user_type, bio, location, industry, founded_year, team_size, investment_range')
@@ -63,10 +73,12 @@ export default function MessagesPage() {
               teamSize: profile.team_size || undefined,
               investmentRange: profile.investment_range || undefined,
             }));
+            console.log('fetchConversations: Partner profiles fetched.', partners.length, 'profiles.');
           }
         }
 
         // Group messages by conversation partner
+        console.log('fetchConversations: Grouping messages by conversation partner...');
         const conversationMap = new Map<string, Conversation>();
         
         messages?.forEach(message => {
@@ -108,19 +120,23 @@ export default function MessagesPage() {
         });
 
         // Sort conversations by last message time (most recent first)
+        console.log('fetchConversations: Sorting conversations...');
         setConversations(Array.from(conversationMap.values()).sort((a, b) => 
           new Date(b.lastMessage.created_at).getTime() - new Date(a.lastMessage.created_at).getTime()
         ));
+        console.log('fetchConversations: Conversations set.');
       } catch (error) {
-        console.error('Error fetching conversations:', error);
+        console.error('fetchConversations: Error fetching conversations:', error);
       } finally {
         setLoading(false);
+        console.log('fetchConversations: Finished. Loading set to false.');
       }
     };
 
     fetchConversations();
 
     // Subscribe to new messages on the common channel
+    console.log('MessagesPage: Subscribing to chat_messages channel...');
     const subscription = supabase
       .channel('chat_messages') // Use the same generic channel as ChatBox
       .on('postgres_changes', {
@@ -129,18 +145,22 @@ export default function MessagesPage() {
         table: 'messages',
         filter: `or(sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id})` // Filter to only current user's messages
       }, async payload => { // This callback is async, so await is fine here
+        console.log('MessagesPage: Real-time message INSERT received.', payload.new);
         const newMessage = payload.new as Message;
 
         const partnerId = newMessage.sender_id === currentUser.id ? newMessage.receiver_id : newMessage.sender_id;
         
         let partnerProfile: User | undefined;
         // Check if partner profile is already in the global store states
+        console.log('MessagesPage: Checking for existing partner profile in store...');
         const existingPartnerInStore = useStore.getState().users.find(u => u.id === partnerId);
 
         if (existingPartnerInStore) {
             partnerProfile = existingPartnerInStore;
+            console.log('MessagesPage: Partner profile found in store.');
         } else {
             // If not found in store, fetch from Supabase
+            console.log('MessagesPage: Partner profile not in store, fetching from Supabase...');
             const { data: fetchedProfile, error: profileError } = await supabase
                 .from('profiles')
                 .select('id, full_name, username, avatar_url, user_type, bio, location, industry, founded_year, team_size, investment_range')
@@ -148,7 +168,7 @@ export default function MessagesPage() {
                 .single();
 
             if (profileError) {
-                console.error('Error fetching new conversation partner profile:', profileError);
+                console.error('MessagesPage: Error fetching new conversation partner profile:', profileError);
                 return; // Abort if profile fetch fails
             }
             if (fetchedProfile) {
@@ -166,17 +186,19 @@ export default function MessagesPage() {
                     teamSize: fetchedProfile.team_size || undefined,
                     investmentRange: fetchedProfile.investment_range || undefined,
                 };
+                console.log('MessagesPage: Partner profile fetched from Supabase.', partnerProfile.username);
             }
         }
 
         if (!partnerProfile) {
             // If partner profile is still not available after trying to fetch,
             // we cannot create a conversation. Log and return.
-            console.warn('Could not determine partner profile for new message:', newMessage);
+            console.warn('MessagesPage: Could not determine partner profile for new message:', newMessage);
             return;
         }
 
         // NOW update the conversations state, with partnerProfile guaranteed
+        console.log('MessagesPage: Updating conversations state...');
         setConversations(prevConversations => {
           const existingConversationIndex = prevConversations.findIndex(
             conv => conv.user.id === newMessage.sender_id || conv.user.id === newMessage.receiver_id
@@ -206,9 +228,11 @@ export default function MessagesPage() {
 
             // Move the updated conversation to the top
             const [movedConversation] = updatedConversations.splice(existingConversationIndex, 1);
+            console.log('MessagesPage: Existing conversation updated and moved to top.');
             return [movedConversation, ...updatedConversations];
 
           } else { // Create new conversation if partner is not in current conversations
+            console.log('MessagesPage: Creating new conversation.');
             const newConversation: Conversation = {
               user: partnerProfile, // Use the fetched/existing partnerProfile
               lastMessage: {
@@ -224,10 +248,12 @@ export default function MessagesPage() {
             return [newConversation, ...prevConversations];
           }
         });
+        console.log('MessagesPage: Conversations state updated.');
       })
       .subscribe();
 
     return () => {
+      console.log('MessagesPage: Unsubscribing from chat_messages channel.');
       subscription.unsubscribe();
     };
   }, [currentUser, setConversations]);
