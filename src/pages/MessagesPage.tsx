@@ -18,7 +18,6 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(true);
   const [selectedChat, setSelectedChat] = useState<{ id: string; name: string; avatar?: string } | null>(null);
   const currentUser = useStore(state => state.currentUser);
-  const followedProfiles = useStore(state => state.followedProfiles);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -34,28 +33,61 @@ export default function MessagesPage() {
 
         if (error) throw error;
 
+        // Extract all unique conversation partner IDs
+        const partnerIds = new Set<string>();
+        messages?.forEach(message => {
+          partnerIds.add(message.sender_id === currentUser.id ? message.receiver_id : message.sender_id);
+        });
+
+        let partners: User[] = [];
+        if (partnerIds.size > 0) {
+          const { data: fetchedPartners, error: partnersError } = await supabase
+            .from('profiles')
+            .select('id, full_name, username, avatar_url, user_type, bio, location, industry, founded_year, team_size, investment_range')
+            .in('id', Array.from(partnerIds));
+          
+          if (partnersError) {
+            console.error('Error fetching conversation partners:', partnersError);
+          } else {
+            partners = (fetchedPartners || []).map(profile => ({
+              id: profile.id,
+              email: '', // Email not needed for display
+              fullName: profile.full_name || '',
+              username: profile.username || '',
+              userType: (profile.user_type === 'entrepreneur' || profile.user_type === 'investor' ? profile.user_type : 'entrepreneur'),
+              avatarUrl: profile.avatar_url || undefined,
+              bio: profile.bio || undefined,
+              location: profile.location || undefined,
+              industry: profile.industry || undefined,
+              foundedYear: profile.founded_year || undefined,
+              teamSize: profile.team_size || undefined,
+              investmentRange: profile.investment_range || undefined,
+            }));
+          }
+        }
+
         // Group messages by conversation partner
         const conversationMap = new Map<string, Conversation>();
         
         messages?.forEach(message => {
           const partnerId = message.sender_id === currentUser.id ? message.receiver_id : message.sender_id;
+          const partner = partners.find(p => p.id === partnerId);
+
+          if (!partner) return; // Skip if partner not found (shouldn't happen with correct data)
           
           if (!conversationMap.has(partnerId)) {
-            const partner = followedProfiles.find(p => p.id === partnerId);
-            if (partner) {
-              conversationMap.set(partnerId, {
-                user: partner,
-                lastMessage: {
-                  id: message.id,
-                  sender_id: message.sender_id,
-                  receiver_id: message.receiver_id,
-                  content: message.content,
-                  created_at: message.created_at,
-                  is_read: message.is_read,
-                },
-                unreadCount: message.receiver_id === currentUser.id && !message.is_read ? 1 : 0
-              });
-            }
+            conversationMap.set(partnerId, {
+              user: partner,
+              lastMessage: {
+                id: message.id,
+                sender_id: message.sender_id,
+                receiver_id: message.receiver_id,
+                content: message.content,
+                created_at: message.created_at,
+                is_read: message.is_read,
+              },
+              unreadCount: message.receiver_id === currentUser.id && !message.is_read ? 1 : 0
+            });
           } else {
             const conversation = conversationMap.get(partnerId)!;
             // Update last message only if the new message is more recent
@@ -75,7 +107,10 @@ export default function MessagesPage() {
           }
         });
 
-        setConversations(Array.from(conversationMap.values()));
+        // Sort conversations by last message time (most recent first)
+        setConversations(Array.from(conversationMap.values()).sort((a, b) => 
+          new Date(b.lastMessage.created_at).getTime() - new Date(a.lastMessage.created_at).getTime()
+        ));
       } catch (error) {
         console.error('Error fetching conversations:', error);
       } finally {
@@ -93,9 +128,55 @@ export default function MessagesPage() {
         schema: 'public',
         table: 'messages',
         filter: `or(sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id})` // Filter to only current user's messages
-      }, payload => {
+      }, async payload => { // This callback is async, so await is fine here
         const newMessage = payload.new as Message;
 
+        const partnerId = newMessage.sender_id === currentUser.id ? newMessage.receiver_id : newMessage.sender_id;
+        
+        let partnerProfile: User | undefined;
+        // Check if partner profile is already in the global store states
+        const existingPartnerInStore = useStore.getState().users.find(u => u.id === partnerId);
+
+        if (existingPartnerInStore) {
+            partnerProfile = existingPartnerInStore;
+        } else {
+            // If not found in store, fetch from Supabase
+            const { data: fetchedProfile, error: profileError } = await supabase
+                .from('profiles')
+                .select('id, full_name, username, avatar_url, user_type, bio, location, industry, founded_year, team_size, investment_range')
+                .eq('id', partnerId)
+                .single();
+
+            if (profileError) {
+                console.error('Error fetching new conversation partner profile:', profileError);
+                return; // Abort if profile fetch fails
+            }
+            if (fetchedProfile) {
+                partnerProfile = {
+                    id: fetchedProfile.id,
+                    email: '', // Email not needed for display here
+                    fullName: fetchedProfile.full_name || '',
+                    username: fetchedProfile.username || '',
+                    userType: (fetchedProfile.user_type === 'entrepreneur' || fetchedProfile.user_type === 'investor' ? fetchedProfile.user_type : 'entrepreneur'),
+                    avatarUrl: fetchedProfile.avatar_url || undefined,
+                    bio: fetchedProfile.bio || undefined,
+                    location: fetchedProfile.location || undefined,
+                    industry: fetchedProfile.industry || undefined,
+                    foundedYear: fetchedProfile.founded_year || undefined,
+                    teamSize: fetchedProfile.team_size || undefined,
+                    investmentRange: fetchedProfile.investment_range || undefined,
+                };
+            }
+        }
+
+        if (!partnerProfile) {
+            // If partner profile is still not available after trying to fetch,
+            // we cannot create a conversation. Log and return.
+            console.warn('Could not determine partner profile for new message:', newMessage);
+            return;
+        }
+
+        // NOW update the conversations state, with partnerProfile guaranteed
         setConversations(prevConversations => {
           const existingConversationIndex = prevConversations.findIndex(
             conv => conv.user.id === newMessage.sender_id || conv.user.id === newMessage.receiver_id
@@ -127,27 +208,20 @@ export default function MessagesPage() {
             const [movedConversation] = updatedConversations.splice(existingConversationIndex, 1);
             return [movedConversation, ...updatedConversations];
 
-          } else {
-            // Create new conversation if partner is a followed profile
-            const partnerId = newMessage.sender_id === currentUser.id ? newMessage.receiver_id : newMessage.sender_id;
-            const partner = followedProfiles.find(p => p.id === partnerId);
-
-            if (partner) {
-              const newConversation: Conversation = {
-                user: partner,
-                lastMessage: {
-                  id: newMessage.id,
-                  sender_id: newMessage.sender_id,
-                  receiver_id: newMessage.receiver_id,
-                  content: newMessage.content,
-                  created_at: newMessage.created_at,
-                  is_read: newMessage.is_read,
-                },
-                unreadCount: newMessage.receiver_id === currentUser.id && !newMessage.is_read ? 1 : 0
-              };
-              return [newConversation, ...prevConversations];
-            }
-            return prevConversations; // No change if partner not found
+          } else { // Create new conversation if partner is not in current conversations
+            const newConversation: Conversation = {
+              user: partnerProfile, // Use the fetched/existing partnerProfile
+              lastMessage: {
+                id: newMessage.id,
+                sender_id: newMessage.sender_id,
+                receiver_id: newMessage.receiver_id,
+                content: newMessage.content,
+                created_at: newMessage.created_at,
+                is_read: newMessage.is_read,
+              },
+              unreadCount: newMessage.receiver_id === currentUser.id && !newMessage.is_read ? 1 : 0
+            };
+            return [newConversation, ...prevConversations];
           }
         });
       })
@@ -156,7 +230,7 @@ export default function MessagesPage() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [currentUser, followedProfiles]);
+  }, [currentUser, setConversations]);
 
   const filteredConversations = conversations;
 
