@@ -9,10 +9,11 @@ import { supabase } from '../lib/supabase';
 import type { User } from '../lib/store';
 
 export default function ConnectionsPage() {
-  const { currentUser, followedProfiles, users, fetchFollowedProfiles, fetchUsers, toggleFollow, followedUserIds } = useStore();
+  const { currentUser, followedProfiles, users, fetchFollowedProfiles, fetchUsers, toggleFollow, followedUserIds, fetchUnreadMessagesCountForUser } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChat, setSelectedChat] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [displayProfiles, setDisplayProfiles] = useState<User[]>([]);
   const navigate = useNavigate();
 
   // State to track if initial fetch for followed profiles is done
@@ -29,7 +30,7 @@ export default function ConnectionsPage() {
     };
 
     loadInitialProfiles();
-  }, [currentUser, initialFollowedFetched]);
+  }, [currentUser, initialFollowedFetched, fetchFollowedProfiles]);
 
   useEffect(() => {
     const loadUsersForSearch = async () => {
@@ -46,7 +47,7 @@ export default function ConnectionsPage() {
     };
 
     loadUsersForSearch();
-  }, [currentUser, searchQuery, initialFollowedFetched]);
+  }, [currentUser, searchQuery, initialFollowedFetched, fetchUsers]);
 
   const profilesToDisplay = searchQuery ? users : followedProfiles;
 
@@ -58,7 +59,32 @@ export default function ConnectionsPage() {
     user_has_followed: followedUserIds.includes(profile.id),
   }));
 
-  console.log('ConnectionsPage: filteredProfiles for rendering:', filteredProfiles.map(p => ({ id: p.id, username: p.username, user_has_followed: p.user_has_followed })));
+  // New useEffect to fetch and set unread counts for filtered profiles
+  useEffect(() => {
+    const fetchAndSetUnreadCounts = async () => {
+      if (!currentUser) {
+        setDisplayProfiles([]);
+        return;
+      }
+
+      // Create a copy of filteredProfiles to avoid direct mutation
+      const profilesWithCounts = [...filteredProfiles];
+
+      const updatedProfiles = await Promise.all(
+        profilesWithCounts.map(async (profile) => {
+          // Only fetch unread count if the profile is not the current user
+          if (profile.id !== currentUser.id) {
+            const unreadCount = await fetchUnreadMessagesCountForUser(profile.id);
+            return { ...profile, unreadMessagesCount: unreadCount };
+          }
+          return profile;
+        })
+      );
+      setDisplayProfiles(updatedProfiles);
+    };
+
+    fetchAndSetUnreadCounts();
+  }, [filteredProfiles, currentUser, fetchUnreadMessagesCountForUser]); // Dependencies
 
   if (!currentUser) {
     return (
@@ -100,14 +126,14 @@ export default function ConnectionsPage() {
           <div className="p-6">
             {isLoading ? (
               <div className="p-8 text-center text-gray-500">Loading {searchQuery ? 'users' : 'connections'}...</div>
-            ) : filteredProfiles.length > 0 ? (
+            ) : displayProfiles.length > 0 ? (
               <div className="space-y-4">
-                {filteredProfiles.map((profile) => (
+                {displayProfiles.map((profile) => (
                   <motion.div
                     key={profile.id}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-lg shadow-sm p-4 flex items-center justify-between"
+                    className="bg-white rounded-lg shadow-sm p-4 flex items-center justify-between relative"
                   >
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-full bg-gray-100 overflow-hidden">
@@ -127,6 +153,11 @@ export default function ConnectionsPage() {
                         <h3 className="font-semibold text-gray-900">{profile.fullName || ''}</h3>
                         <p className="text-sm text-gray-500">@{profile.username || ''}</p>
                       </div>
+                      {profile.unreadMessagesCount && profile.unreadMessagesCount > 0 && (
+                        <span className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center z-10">
+                          {profile.unreadMessagesCount}
+                        </span>
+                      )}
                     </div>
                     {profile.id !== currentUser.id && (
                       profile.user_has_followed ? (
@@ -180,8 +211,8 @@ export default function ConnectionsPage() {
         {selectedChat && (
           <ChatBox
             receiverId={selectedChat}
-            receiverName={(searchQuery ? users : followedProfiles).find(p => p.id === selectedChat)?.fullName || ''}
-            receiverAvatar={(searchQuery ? users : followedProfiles).find(p => p.id === selectedChat)?.avatarUrl}
+            receiverName={displayProfiles.find(p => p.id === selectedChat)?.fullName || ''}
+            receiverAvatar={displayProfiles.find(p => p.id === selectedChat)?.avatarUrl}
             onClose={() => setSelectedChat(null)}
           />
         )}
