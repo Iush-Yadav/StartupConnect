@@ -112,36 +112,62 @@ export default function ChatBox({ receiverId, receiverName, receiverAvatar, onCl
   };
 
   useEffect(() => {
-    fetchMessages();
+    if (!currentUser || !receiverId) return; // Ensure both are present before proceeding
 
-    // Subscribe to new messages
-    // Changed channel name to a generic one to improve real-time updates.
-    // The filter ensures only relevant messages are processed for this specific chat.
-    const subscription = supabase
-      .channel('chat_messages') // Changed channel name
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `or(and(sender_id.eq.${currentUser?.id},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${currentUser?.id}))`
-      }, payload => {
-        // When a new message is inserted, check if it belongs to this chat
-        const newMessage = payload.new as Message;
-        if (
-          (newMessage.sender_id === currentUser?.id && newMessage.receiver_id === receiverId) ||
-          (newMessage.sender_id === receiverId && newMessage.receiver_id === currentUser?.id)
-        ) {
+    setLoading(true); // Indicate loading when fetching messages
+    
+    const setupChat = async () => {
+      try {
+        // 1. Fetch initial messages
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${currentUser.id})`)
+          .order('created_at', { ascending: true });
+
+        if (error) throw error;
+        setMessages(data || []);
+
+        // Mark messages as read for the current user (receiver)
+        const unreadMessages = (data || []).filter(msg => msg.receiver_id === currentUser.id && !msg.is_read);
+        if (unreadMessages.length > 0) {
+          const { error: updateError } = await supabase
+            .from('messages')
+            .update({ is_read: true })
+            .in('id', unreadMessages.map(msg => msg.id));
+
+          if (updateError) {
+            console.error('Error marking messages as read:', updateError);
+          }
+          fetchTotalUnreadMessages();
+        }
+
+      } catch (error) {
+        console.error('Error fetching messages:', error);
+      } finally {
+        setLoading(false);
+      }
+
+      // 2. Set up real-time subscription AFTER initial fetch is complete
+      const subscription = supabase
+        .channel('chat_messages')
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `or(and(sender_id.eq.${currentUser.id},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${currentUser.id}))`
+        }, payload => {
+          const newMessage = payload.new as Message;
           // Add the new message to the local state for instant display
           setMessages(prev => {
-            // Prevent duplicate messages if fetchMessages also adds it (race condition)
-            if (!prev.some(msg => msg.id === newMessage.id)) {
+            if (!prev.some(msg => msg.id === newMessage.id)) { // Prevent duplicates if already fetched
                 return [...prev, newMessage];
             }
             return prev;
           });
-          
-          // If the new message is for the current user and is unread, mark it as read
-          if (newMessage.receiver_id === currentUser?.id && !newMessage.is_read) {
+
+          // Mark message as read if current user is the receiver and message is unread
+          if (newMessage.receiver_id === currentUser.id && !newMessage.is_read) {
             supabase
               .from('messages')
               .update({ is_read: true })
@@ -150,18 +176,25 @@ export default function ChatBox({ receiverId, receiverName, receiverAvatar, onCl
                 if (updateError) {
                   console.error('Error marking single message as read:', updateError);
                 } else {
-                  fetchTotalUnreadMessages(); // Update unread count
+                  fetchTotalUnreadMessages();
                 }
               });
           }
-        }
-      })
-      .subscribe();
+        })
+        .subscribe();
 
-    return () => {
-      subscription.unsubscribe();
+      // Return a cleanup function for the subscription
+      return () => {
+        subscription.unsubscribe();
+      };
     };
-  }, [currentUser?.id, receiverId, fetchTotalUnreadMessages]);
+
+    // Execute the async setup function and return its cleanup function
+    const cleanupPromise = setupChat();
+    return () => {
+      cleanupPromise.then(cleanupFn => cleanupFn && cleanupFn());
+    };
+  }, [currentUser, receiverId, fetchTotalUnreadMessages]);
 
   // Subscribe to presence changes
   useEffect(() => {
