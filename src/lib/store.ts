@@ -813,11 +813,13 @@ export const useStore = create<Store>((set, get) => ({
   fetchTotalUnreadMessages: async () => {
     const { currentUser } = get();
     if (!currentUser) {
+      console.log('fetchTotalUnreadMessages: No current user, setting count to 0.');
       set({ totalUnreadMessages: 0 });
       return;
     }
 
     try {
+      console.log('fetchTotalUnreadMessages: Fetching unread count for user:', currentUser.id);
       const { count, error } = await supabase
         .from('messages')
         .select('id', { count: 'exact' })
@@ -825,13 +827,15 @@ export const useStore = create<Store>((set, get) => ({
         .eq('is_read', false);
 
       if (error) {
-        console.error('Error fetching total unread messages:', error);
+        console.error('fetchTotalUnreadMessages: Error fetching total unread messages:', error);
         set({ totalUnreadMessages: 0 });
         return;
       }
+      console.log('fetchTotalUnreadMessages: Supabase returned count:', count);
       set({ totalUnreadMessages: count || 0 });
+      console.log('fetchTotalUnreadMessages: Set totalUnreadMessages to:', count || 0);
     } catch (error) {
-      console.error('Error in fetchTotalUnreadMessages:', error);
+      console.error('fetchTotalUnreadMessages: Error in fetchTotalUnreadMessages (catch):', error);
       set({ totalUnreadMessages: 0 });
     }
   },
