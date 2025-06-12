@@ -1,11 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import Layout from '../components/Layout/Layout';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useStore } from '../lib/store';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, Search, UserPlus } from 'lucide-react';
 import ChatBox from '../components/Chat/ChatBox';
-import { supabase } from '../lib/supabase';
 import type { User } from '../lib/store';
 
 export default function ConnectionsPage() {
@@ -19,74 +17,89 @@ export default function ConnectionsPage() {
   // State to track if initial fetch for followed profiles is done
   const [initialFollowedFetched, setInitialFollowedFetched] = useState(false);
 
+  // Memoize store functions to avoid new references on every render
+  const fetchFollowedProfilesMemo = useCallback(fetchFollowedProfiles, []);
+  const fetchUsersMemo = useCallback(fetchUsers, []);
+  const fetchUnreadMessagesCountForUserMemo = useCallback(fetchUnreadMessagesCountForUser, []);
+
   useEffect(() => {
+    console.log('ConnectionsPage: Main useEffect triggered.');
     const loadInitialProfiles = async () => {
+      console.log('ConnectionsPage: loadInitialProfiles starting...');
       if (currentUser && !initialFollowedFetched) {
         setIsLoading(true);
-        await fetchFollowedProfiles();
+        console.log('ConnectionsPage: Calling fetchFollowedProfiles...');
+        await fetchFollowedProfilesMemo();
         setInitialFollowedFetched(true);
         setIsLoading(false);
+        console.log('ConnectionsPage: fetchFollowedProfiles finished.');
       }
     };
 
     loadInitialProfiles();
-  }, [currentUser, initialFollowedFetched, fetchFollowedProfiles]);
+    console.log('ConnectionsPage: loadInitialProfiles called.');
+  }, [currentUser, initialFollowedFetched, fetchFollowedProfilesMemo]);
 
   useEffect(() => {
+    console.log('ConnectionsPage: loadUsersForSearch useEffect triggered.');
     const loadUsersForSearch = async () => {
+      console.log('ConnectionsPage: loadUsersForSearch starting...');
       if (currentUser && searchQuery) {
         setIsLoading(true);
-        await fetchUsers();
+        console.log('ConnectionsPage: Calling fetchUsers for search query...');
+        await fetchUsersMemo();
         setIsLoading(false);
+        console.log('ConnectionsPage: fetchUsers for search query finished.');
       } else if (currentUser && !searchQuery && initialFollowedFetched) {
-        // If search query is cleared and initial followed profiles are fetched, ensure UI reflects followed profiles and not a stale all-users list
-        // This case is largely handled by `profilesToDisplay` but an explicit fetch can ensure freshest data if needed
-        // However, given the primary issue is infinite loop, we avoid redundant fetches here
-        // The `profilesToDisplay` derived state already correctly switches between `users` and `followedProfiles`
+        console.log('ConnectionsPage: No search query, initial followed fetched. No extra fetch needed.');
       }
     };
 
     loadUsersForSearch();
-  }, [currentUser, searchQuery, initialFollowedFetched, fetchUsers]);
+    console.log('ConnectionsPage: loadUsersForSearch called.');
+  }, [currentUser, searchQuery, initialFollowedFetched, fetchUsersMemo]);
 
-  const profilesToDisplay = searchQuery ? users : followedProfiles;
-
-  const filteredProfiles = profilesToDisplay.filter(profile => 
+  // Memoize filteredProfiles to avoid new array reference on every render
+  const profilesToDisplay = useMemo(() => searchQuery ? users : followedProfiles, [searchQuery, users, followedProfiles]);
+  const filteredProfiles = useMemo(() => profilesToDisplay.filter(profile => 
     (profile.fullName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (profile.username || '').toLowerCase().includes(searchQuery.toLowerCase())
   ).map(profile => ({
     ...profile,
     user_has_followed: followedUserIds.includes(profile.id),
-  }));
+  })), [profilesToDisplay, searchQuery, followedUserIds]);
 
-  // New useEffect to fetch and set unread counts for filtered profiles
   useEffect(() => {
+    console.log('ConnectionsPage: fetchAndSetUnreadCounts useEffect triggered.');
     const fetchAndSetUnreadCounts = async () => {
+      console.log('ConnectionsPage: fetchAndSetUnreadCounts starting...');
       if (!currentUser) {
+        console.log('ConnectionsPage: No current user for unread counts, setting displayProfiles to empty.');
         setDisplayProfiles([]);
         return;
       }
 
       // Create a copy of filteredProfiles to avoid direct mutation
-      const profilesWithCounts = [...filteredProfiles];
-
+      console.log('ConnectionsPage: Mapping profiles to fetch unread counts...');
       const updatedProfiles = await Promise.all(
-        profilesWithCounts.map(async (profile) => {
-          // Only fetch unread count if the profile is not the current user
+        filteredProfiles.map(async (profile) => {
           if (profile.id !== currentUser.id) {
-            const unreadCount = await fetchUnreadMessagesCountForUser(profile.id);
+            const unreadCount = await fetchUnreadMessagesCountForUserMemo(profile.id);
             return { ...profile, unreadMessagesCount: unreadCount };
           }
           return profile;
         })
       );
       setDisplayProfiles(updatedProfiles);
+      console.log('ConnectionsPage: displayProfiles updated with unread counts.', updatedProfiles.length, 'profiles.');
     };
 
     fetchAndSetUnreadCounts();
-  }, [filteredProfiles, currentUser, fetchUnreadMessagesCountForUser]); // Dependencies
+    console.log('ConnectionsPage: fetchAndSetUnreadCounts called.');
+  }, [filteredProfiles, currentUser, fetchUnreadMessagesCountForUserMemo]);
 
   if (!currentUser) {
+    console.log('ConnectionsPage: Not logged in, rendering login prompt.');
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 p-4 flex items-center justify-center">
         <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
@@ -103,6 +116,7 @@ export default function ConnectionsPage() {
     );
   }
 
+  console.log('ConnectionsPage: Rendering component.');
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 p-4">
       <div className="max-w-4xl mx-auto">
