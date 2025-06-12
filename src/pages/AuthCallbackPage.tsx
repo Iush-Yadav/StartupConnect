@@ -1,24 +1,21 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useStore } from '../lib/store';
 import { supabase } from '../lib/supabase';
+import { useStore } from '../lib/store';
 
 export default function AuthCallbackPage() {
   const navigate = useNavigate();
-  const login = useStore(state => state.login);
+  const { login } = useStore();
 
   useEffect(() => {
-    console.log('AuthCallbackPage: useEffect triggered.');
     (async () => {
       try {
-        console.log('AuthCallbackPage: Attempting to get session.');
-        const { data: { session }, error } = await supabase.auth.getSession();
-        console.log('AuthCallbackPage: Supabase getSession data:', session);
-        console.log('AuthCallbackPage: Supabase getSession error:', error);
+        console.log('AuthCallbackPage: Starting auth callback process...');
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        if (error) {
-          console.error('AuthCallbackPage: Error during auth callback (getSession):', error);
-          navigate('/login', { state: { error: 'Authentication failed. Please try again.' } });
+        if (sessionError) {
+          console.error('AuthCallbackPage: Error getting session:', sessionError);
+          navigate('/login', { state: { error: 'Failed to authenticate.' } });
           return;
         }
 
@@ -36,7 +33,7 @@ export default function AuthCallbackPage() {
           console.log('AuthCallbackPage: Profile fetch error:', profileError);
 
           if (profileError && profileError.code !== 'PGRST116') { // PGRST116 is 'No rows found'
-            console.error('AuthCallbackPage: Error fetching profile in AuthCallbackPage:', profileError);
+            console.error('AuthCallbackPage: Error fetching profile:', profileError);
             navigate('/login', { state: { error: 'Failed to retrieve user profile.' } });
             return;
           }
@@ -62,7 +59,7 @@ export default function AuthCallbackPage() {
             console.log('AuthCallbackPage: New profile creation error:', createProfileError);
             
             if (createProfileError) {
-              console.error('AuthCallbackPage: Error creating profile in AuthCallbackPage:', createProfileError);
+              console.error('AuthCallbackPage: Error creating profile:', createProfileError);
               navigate('/login', { state: { error: 'Failed to create user profile.' } });
               return;
             }
@@ -90,8 +87,8 @@ export default function AuthCallbackPage() {
           console.log('AuthCallbackPage: No session found after callback, redirecting to /login');
           navigate('/login');
         }
-      } catch (outerError) {
-        console.error('AuthCallbackPage: Unhandled error in AuthCallbackPage useEffect (outer catch):', outerError);
+      } catch (error) {
+        console.error('AuthCallbackPage: Unhandled error:', error);
         navigate('/login', { state: { error: 'An unexpected error occurred during authentication.' } });
       }
     })();
