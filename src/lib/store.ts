@@ -21,6 +21,7 @@ export interface User {
   teamSize?: number;
   phoneNumber?: string;
   user_has_followed?: boolean;
+  unreadMessagesCount?: number;
 }
 
 export interface Post {
@@ -85,6 +86,7 @@ interface Store {
   totalUnreadMessages: number;
   fetchTotalUnreadMessages: () => Promise<void>;
   followedUserIds: string[];
+  fetchUnreadMessagesCountForUser: (senderId: string) => Promise<number>;
 }
 
 export const useStore = create<Store>((set, get) => ({
@@ -591,7 +593,6 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   fetchUsers: async () => {
-    const { currentUser } = get();
     const { data: profilesData, error } = await supabase
       .from('profiles')
       .select('id, full_name, username, user_type, avatar_url, bio, location, industry, founded_year, team_size, investment_range');
@@ -734,7 +735,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   toggleFollow: async (profileIdToFollow: string) => {
-    const { currentUser, getFollowedUserIds } = get();
+    const { currentUser } = get();
     if (!currentUser) {
       console.error('toggleFollow: No current user found');
       return;
@@ -819,20 +820,42 @@ export const useStore = create<Store>((set, get) => ({
     try {
       const { count, error } = await supabase
         .from('messages')
-        .select('id', { count: 'exact', head: true })
+        .select('id', { count: 'exact' })
         .eq('receiver_id', currentUser.id)
         .eq('is_read', false);
 
       if (error) {
-        console.error('Error fetching unread messages:', error);
+        console.error('Error fetching total unread messages:', error);
         set({ totalUnreadMessages: 0 });
         return;
       }
-
       set({ totalUnreadMessages: count || 0 });
     } catch (error) {
       console.error('Error in fetchTotalUnreadMessages:', error);
       set({ totalUnreadMessages: 0 });
+    }
+  },
+
+  fetchUnreadMessagesCountForUser: async (senderId: string): Promise<number> => {
+    const { currentUser } = get();
+    if (!currentUser) return 0;
+
+    try {
+      const { count, error } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact' })
+        .eq('receiver_id', currentUser.id)
+        .eq('sender_id', senderId)
+        .eq('is_read', false);
+
+      if (error) {
+        console.error(`Error fetching unread messages for user ${senderId}:`, error);
+        return 0;
+      }
+      return count || 0;
+    } catch (error) {
+      console.error(`Error in fetchUnreadMessagesCountForUser for user ${senderId}:`, error);
+      return 0;
     }
   },
 }));
