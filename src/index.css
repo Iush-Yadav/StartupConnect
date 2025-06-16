@@ -1,0 +1,66 @@
+html,
+:host {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global box-sizing for all elements */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  background: linear-gradient(135deg, #fdf2f8 0%, #ede9fe 100%);
+  min-height: 100vh;
+}
+
+/* Custom slider styles for the crop modal */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #e5e7eb;
+  outline: none;
+  border-radius: 8px;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #8b5cf6;
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #8b5cf6;
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* React Image Crop custom styles */
+.ReactCrop__crop-selection {
+  border: 2px solid #8b5cf6;
+  box-shadow: 0 0 0 9999em rgba(0, 0, 0, 0.5);
+}
+
+.ReactCrop__drag-handle {
+  background-color: #8b5cf6;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.ReactCrop__drag-handle:after {
+  background-color: #8b5cf6;
+}
