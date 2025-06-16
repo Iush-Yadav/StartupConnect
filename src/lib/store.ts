@@ -887,6 +887,19 @@ export const useStore = create<Store>((set, get) => ({
       : [...latestFollowedUserIds, profileId];
     set({ followedUserIds: updatedFollowedUserIds });
 
+    // Immediately update posts and users with new follow status
+    const posts = get().posts.map(post => ({
+      ...post,
+      user_has_followed: updatedFollowedUserIds.includes(post.userId),
+    }));
+    set({ posts });
+
+    const users = get().users.map(user => ({
+      ...user,
+      user_has_followed: updatedFollowedUserIds.includes(user.id),
+    }));
+    set({ users });
+
     try {
       if (isCurrentlyFollowing) {
         const { error } = await supabase
