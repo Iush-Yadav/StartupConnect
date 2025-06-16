@@ -109,8 +109,73 @@ export const useStore = create<Store>((set, get) => ({
     await get().fetchCurrentUser();
     console.log('Initialize: currentUser after fetchCurrentUser:', get().currentUser?.id);
     console.log('Initialize: Posts fetched.');
-    // Fetch initial unread messages and set up subscription
+    
+    // Fetch initial data
     get().fetchTotalUnreadMessages();
+    get().fetchFollowedProfiles();
+    get().fetchPosts();
+
+    // Set up real-time subscriptions
+    const currentUser = get().currentUser;
+    if (currentUser) {
+      // Subscribe to follows changes
+      supabase
+        .channel('user_follows')
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'follows',
+          filter: `follower_id=eq.${currentUser.id}`
+        }, async (payload) => {
+          console.log('Follows change detected:', payload);
+          await get().fetchFollowedProfiles();
+          await get().fetchPosts();
+        })
+        .subscribe();
+
+      // Subscribe to posts changes
+      supabase
+        .channel('user_posts')
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'posts'
+        }, async (payload) => {
+          console.log('Posts change detected:', payload);
+          await get().fetchPosts();
+        })
+        .subscribe();
+
+      // Subscribe to likes changes
+      supabase
+        .channel('user_likes')
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'post_likes'
+        }, async (payload) => {
+          console.log('Likes change detected:', payload);
+          await get().fetchPosts();
+        })
+        .subscribe();
+
+      // Subscribe to profile changes
+      supabase
+        .channel('user_profiles')
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'profiles'
+        }, async (payload) => {
+          console.log('Profile change detected:', payload);
+          if (payload.new && 'id' in payload.new && payload.new.id === currentUser.id) {
+            await get().fetchCurrentUser();
+          }
+          await get().fetchFollowedProfiles();
+          await get().fetchPosts();
+        })
+        .subscribe();
+    }
   },
 
   fetchCurrentUser: async () => {
@@ -461,7 +526,6 @@ export const useStore = create<Store>((set, get) => ({
 
     try {
       if (isCurrentlyLiked) {
-        console.log('toggleLike: Removing existing like');
         const { error } = await supabase
           .from('post_likes')
           .delete()
@@ -469,7 +533,6 @@ export const useStore = create<Store>((set, get) => ({
           .eq('user_id', currentUser.id);
         if (error) throw error;
       } else {
-        console.log('toggleLike: Adding new like');
         const { error } = await supabase
           .from('post_likes')
           .insert({
@@ -478,12 +541,10 @@ export const useStore = create<Store>((set, get) => ({
           });
         if (error) throw error;
       }
-      // Re-fetch posts to ensure UI is in sync with backend
-      get().fetchPosts();
+      // Real-time subscription will handle the UI updates
     } catch (error) {
       console.error('Error toggling like, reverting optimistic update:', error);
-      // Revert the optimistic update if the API call fails
-      set({ posts: posts }); // Revert to the original state
+      set({ posts: posts });
     }
   },
 
@@ -797,7 +858,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   toggleFollow: async (profileId: string) => {
-    const { currentUser, followedUserIds, fetchFollowedProfiles } = get();
+    const { currentUser, followedUserIds } = get();
     if (!currentUser) {
       console.error('toggleFollow: No current user found');
       return;
@@ -818,7 +879,6 @@ export const useStore = create<Store>((set, get) => ({
 
     try {
       if (isCurrentlyFollowing) {
-        console.log('toggleFollow: Unfollowing user:', profileId);
         const { error } = await supabase
           .from('follows')
           .delete()
@@ -826,7 +886,6 @@ export const useStore = create<Store>((set, get) => ({
           .eq('following_id', profileId);
         if (error) throw error;
       } else {
-        console.log('toggleFollow: Following user:', profileId);
         const { error } = await supabase
           .from('follows')
           .insert({
@@ -835,15 +894,11 @@ export const useStore = create<Store>((set, get) => ({
           });
         if (error) throw error;
       }
-      // Re-fetch followed profiles to ensure UI is in sync with backend
-      fetchFollowedProfiles();
-      // Also re-fetch posts to update the follow status on PostCards
-      get().fetchPosts();
+      // Real-time subscription will handle the UI updates
     } catch (error) {
       console.error('Error toggling follow, reverting optimistic update:', error);
-      // Revert the optimistic update if the API call fails
-      fetchFollowedProfiles(); // Revert to the original state by re-fetching
-      get().fetchPosts(); // Revert posts state too
+      get().fetchFollowedProfiles();
+      get().fetchPosts();
     }
   },
 
