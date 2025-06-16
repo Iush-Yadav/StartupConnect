@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './supabase-types';
 
-const supabaseUrl = process.env.REACT_APP_SUPABASE_URL!;
-const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY!;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing Supabase environment variables:', {
@@ -69,7 +69,6 @@ supabase
   .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {})
   .subscribe();
 
-// Test connection
 (async () => {
   try {
     const { error } = await supabase.from('posts').select('count', { count: 'exact', head: true });
