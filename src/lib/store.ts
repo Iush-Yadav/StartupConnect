@@ -485,13 +485,19 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   deletePost: async (postId: string) => {
+    const { posts } = get();
     const { error } = await supabase
       .from('posts')
       .delete()
       .eq('id', postId);
 
     if (error) throw error;
-    get().fetchPosts(); // Refresh posts after deletion
+
+    // Remove the post from local state immediately
+    set({ posts: posts.filter(post => post.id !== postId) });
+
+    // Optionally, refetch posts from backend for consistency
+    get().fetchPosts();
   },
 
   toggleLike: async (postId: string) => {
@@ -506,17 +512,19 @@ export const useStore = create<Store>((set, get) => ({
       return;
     }
 
-    const postIndex = posts.findIndex(p => p.id === postId);
+    // Always get the latest posts for optimistic update
+    const latestPosts = get().posts;
+    const postIndex = latestPosts.findIndex(p => p.id === postId);
     if (postIndex === -1) {
       console.error('toggleLike: Post not found in store:', postId);
       return;
     }
 
-    const currentPost = posts[postIndex];
+    const currentPost = latestPosts[postIndex];
     const isCurrentlyLiked = currentPost.user_has_liked;
 
     // Optimistically update the UI
-    const updatedPosts = [...posts];
+    const updatedPosts = [...latestPosts];
     updatedPosts[postIndex] = {
       ...currentPost,
       likes: isCurrentlyLiked ? currentPost.likes - 1 : currentPost.likes + 1,
@@ -544,7 +552,7 @@ export const useStore = create<Store>((set, get) => ({
       // Real-time subscription will handle the UI updates
     } catch (error) {
       console.error('Error toggling like, reverting optimistic update:', error);
-      set({ posts: posts });
+      set({ posts: posts }); // Revert to previous state if error
     }
   },
 
@@ -869,12 +877,14 @@ export const useStore = create<Store>((set, get) => ({
       return;
     }
 
-    const isCurrentlyFollowing = followedUserIds.includes(profileId);
+    // Always get the latest followedUserIds for optimistic update
+    const latestFollowedUserIds = get().followedUserIds;
+    const isCurrentlyFollowing = latestFollowedUserIds.includes(profileId);
 
     // Optimistically update the UI
     const updatedFollowedUserIds = isCurrentlyFollowing
-      ? followedUserIds.filter(id => id !== profileId)
-      : [...followedUserIds, profileId];
+      ? latestFollowedUserIds.filter(id => id !== profileId)
+      : [...latestFollowedUserIds, profileId];
     set({ followedUserIds: updatedFollowedUserIds });
 
     try {
