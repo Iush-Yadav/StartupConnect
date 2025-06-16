@@ -21,7 +21,6 @@ export default function PostCard({ post, onLike }: PostCardProps) {
   const [showShareMenu, setShowShareMenu] = useState(false);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [showAuthMessage, setShowAuthMessage] = useState(false);
-  const [followStatus, setFollowStatus] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const shareMenuRef = useRef<HTMLDivElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
@@ -155,12 +154,8 @@ export default function PostCard({ post, onLike }: PostCardProps) {
     try {
       setLoading(true);
       await toggleFollow(post.userId);
-      setFollowStatus(post.user_has_followed ? 'Unfollowed!' : 'Following!');
-      setTimeout(() => setFollowStatus(null), 2000);
     } catch (error) {
       console.error('Error toggling follow:', error);
-      setFollowStatus('Failed to update follow status.');
-      setTimeout(() => setFollowStatus(null), 2000);
     } finally {
       setLoading(false);
     }
@@ -400,12 +395,6 @@ export default function PostCard({ post, onLike }: PostCardProps) {
             </div>
           )}
         </div>
-
-        {followStatus && (
-          <div className="absolute bottom-full mb-2 left-0 bg-blue-500 text-white text-sm px-3 py-1 rounded-md shadow-lg animate-fade-in-up">
-            <span>{followStatus}</span>
-          </div>
-        )}
 
         {!currentUser && (
           <AnimatePresence>
