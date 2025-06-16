@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './supabase-types';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = process.env.REACT_APP_SUPABASE_URL!;
+const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY!;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing Supabase environment variables:', {
@@ -28,43 +28,46 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: true
   },
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    },
+  },
+  db: {
+    schema: 'public',
+  },
+  global: {
+    headers: {
+      'x-application-name': 'startupconnect',
+    },
+  },
 });
 
-// Removed: Automatic initialization of storage bucket and policies.
-// Storage buckets should be created manually in the Supabase dashboard or via database migrations.
-// (async () => {
-//   try {
-//     const { data: buckets, error: bucketsError } = await supabase
-//       .storage
-//       .listBuckets();
+// Enable real-time for specific tables
+supabase
+  .channel('public:posts')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {})
+  .subscribe();
 
-//     if (bucketsError) {
-//       console.error('Error checking storage buckets:', bucketsError);
-//       return;
-//     }
+supabase
+  .channel('public:follows')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'follows' }, () => {})
+  .subscribe();
 
-//     const mediaBucketExists = buckets?.some(bucket => bucket.name === 'media');
+supabase
+  .channel('public:profiles')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {})
+  .subscribe();
 
-//     if (!mediaBucketExists) {
-//       const { error: createError } = await supabase
-//         .storage
-//         .createBucket('media', {
-//           public: true,
-//           fileSizeLimit: 10485760, // 10MB
-//           allowedMimeTypes: ['image/*', 'video/*']
-//         });
+supabase
+  .channel('public:post_likes')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'post_likes' }, () => {})
+  .subscribe();
 
-//       if (createError) {
-//         console.error('Error creating media bucket:', createError);
-//         return;
-//       }
-
-//       console.log('Created media bucket successfully');
-//     }
-//   } catch (error) {
-//     console.error('Error initializing storage:', error);
-//   }
-// })();
+supabase
+  .channel('public:messages')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {})
+  .subscribe();
 
 // Test connection
 (async () => {
