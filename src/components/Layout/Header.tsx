@@ -13,7 +13,7 @@ export default function Header() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const fetchFollowedProfiles = useStore(state => state.fetchFollowedProfiles);
-  const followedProfiles = useStore(state => state.followedProfiles); // Correctly retrieve from store
+  const followedProfiles = useStore(state => state.followedProfiles);
   const totalUnreadMessages = useStore(state => state.totalUnreadMessages);
   const fetchTotalUnreadMessages = useStore(state => state.fetchTotalUnreadMessages);
 
