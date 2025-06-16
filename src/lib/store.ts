@@ -532,6 +532,14 @@ export const useStore = create<Store>((set, get) => ({
     };
     set({ posts: updatedPosts });
 
+    // Immediately update like status for all posts in the store
+    const refreshedPosts = get().posts.map(post =>
+      post.id === postId
+        ? { ...post, user_has_liked: !isCurrentlyLiked, likes: isCurrentlyLiked ? post.likes - 1 : post.likes + 1 }
+        : post
+    );
+    set({ posts: refreshedPosts });
+
     try {
       if (isCurrentlyLiked) {
         const { error } = await supabase
