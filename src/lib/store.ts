@@ -523,22 +523,17 @@ export const useStore = create<Store>((set, get) => ({
     const currentPost = latestPosts[postIndex];
     const isCurrentlyLiked = currentPost.user_has_liked;
 
-    // Optimistically update the UI
-    const updatedPosts = [...latestPosts];
-    updatedPosts[postIndex] = {
-      ...currentPost,
-      likes: isCurrentlyLiked ? currentPost.likes - 1 : currentPost.likes + 1,
-      user_has_liked: !isCurrentlyLiked,
-    };
-    set({ posts: updatedPosts });
-
-    // Immediately update like status for all posts in the store
-    const refreshedPosts = get().posts.map(post =>
+    // Optimistically update only the liked post
+    const updatedPosts = latestPosts.map(post =>
       post.id === postId
-        ? { ...post, user_has_liked: !isCurrentlyLiked, likes: isCurrentlyLiked ? post.likes - 1 : post.likes + 1 }
+        ? {
+            ...post,
+            likes: isCurrentlyLiked ? post.likes - 1 : post.likes + 1,
+            user_has_liked: !isCurrentlyLiked,
+          }
         : post
     );
-    set({ posts: refreshedPosts });
+    set({ posts: updatedPosts });
 
     try {
       if (isCurrentlyLiked) {
@@ -560,7 +555,7 @@ export const useStore = create<Store>((set, get) => ({
       // Real-time subscription will handle the UI updates
     } catch (error) {
       console.error('Error toggling like, reverting optimistic update:', error);
-      set({ posts: posts }); // Revert to previous state if error
+      set({ posts }); // Revert to previous state if error
     }
   },
 
