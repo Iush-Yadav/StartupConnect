@@ -109,8 +109,6 @@ export default function Header() {
                 >
                   <MessageLogo />
                   <span>Messages</span>
-                  </span>
-                  )}
                 </Link>
                 <Link
                   to="/create-post"
@@ -212,11 +210,6 @@ export default function Header() {
             {currentUser && (
               <Link to="/connections" className="relative flex items-center space-x-2 text-gray-600 hover:text-purple-600 py-2" onClick={() => setShowMobileMenu(false)}>
                 <MessageLogo /> <span>Messages</span>
-                {totalUnreadMessages > 0 && (
-                  <span className="absolute top-0 right-0 -mt-1 -mr-1 bg-red-500 text-white text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">
-                    {totalUnreadMessages}
-                  </span>
-                )}
               </Link>
             )}
             {/* Mobile Connections link - always display */}
